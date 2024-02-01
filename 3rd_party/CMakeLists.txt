@@ -1,0 +1,5 @@
+# onnx (with directML)
+add_library(onnxrt INTERFACE)
+target_include_directories(onnxrt INTERFACE OnnxRuntime.DirectML/include)
+target_link_directories(onnxrt INTERFACE OnnxRuntime.DirectML/lib)
+target_link_libraries(onnxrt INTERFACE onnxruntime)
