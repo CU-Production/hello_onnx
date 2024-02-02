@@ -4,10 +4,23 @@
 #include <windows.h>
 #include <windowsx.h>
 #include <dml_provider_factory.h>
-#include <onnxruntime_cxx_api.h>
 #include <array>
 #include <cmath>
 #include <algorithm>
+#include <memory>
+#include <vector>
+#include <assert.h>
+
+#define ORT_ABORT_ON_ERROR(expr)                             \
+  do {                                                       \
+    OrtStatus* onnx_status = (expr);                         \
+    if (onnx_status != NULL) {                               \
+      const char* msg = g_ort->GetErrorMessage(onnx_status); \
+      fprintf(stderr, "%s\n", msg);                          \
+      g_ort->ReleaseStatus(onnx_status);                     \
+      abort();                                               \
+    }                                                        \
+  } while (0);
 
 template <typename T>
 static void softmax(T& input) {
@@ -22,34 +35,59 @@ static void softmax(T& input) {
   }
 }
 
+const OrtApi* g_ort = NULL;
+
 // This is the structure to interface with the MNIST model
 // After instantiation, set the input_image_ data to be the 28x28 pixel image of the number to recognize
 // Then call Run() to fill in the results_ data with the probabilities of each
 // result_ holds the index with highest probability (aka the number the model thinks is in the image)
 struct MNIST {
   MNIST() {
-    Ort::SessionOptions session_options{};
-    session_options.SetGraphOptimizationLevel(ORT_ENABLE_ALL);
-    OrtSessionOptionsAppendExecutionProvider_DML(session_options, 0);
-    // Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(session_options, 0));
-    // Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_Tensorrt(session_options, 0));
-    // Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0));
+    g_ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
+    if (!g_ort)
+    {
+      assert(0, "Failed to init ONNX Runtime engine.\n"); 
+    }
 
-    session_ = {env, L"mnist.onnx", session_options};
+    ORT_ABORT_ON_ERROR(g_ort->CreateEnv(OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING, "testMNIST", &env_));
+    
+    OrtSessionOptions* session_options;
+    g_ort->CreateSessionOptions(&session_options);
+    g_ort->SetSessionGraphOptimizationLevel(session_options, GraphOptimizationLevel::ORT_ENABLE_ALL);
+    g_ort->SetSessionExecutionMode(session_options, ExecutionMode::ORT_SEQUENTIAL);
+    g_ort->DisableMemPattern(session_options);
 
-    auto memory_info = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
-    input_tensor_ = Ort::Value::CreateTensor<float>(memory_info, input_image_.data(), input_image_.size(),
-                                                    input_shape_.data(), input_shape_.size());
-    output_tensor_ = Ort::Value::CreateTensor<float>(memory_info, results_.data(), results_.size(),
-                                                     output_shape_.data(), output_shape_.size());
+    //ORT_ABORT_ON_ERROR(OrtSessionOptionsAppendExecutionProvider_DML(session_options, 0));
+    //ORT_ABORT_ON_ERROR(OrtSessionOptionsAppendExecutionProvider_Tensorrt(session_options, 0));
+    //ORT_ABORT_ON_ERROR(OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0));
+
+    ORT_ABORT_ON_ERROR(g_ort->CreateSession(env_, L"mnist.onnx", session_options, &session_));
+
+    OrtMemoryInfo* memory_info;
+    ORT_ABORT_ON_ERROR(g_ort->CreateCpuMemoryInfo(OrtDeviceAllocator, OrtMemTypeCPU, &memory_info));
+
+    input_tensor_ = NULL;
+    const size_t input_shape_len = sizeof(input_shape_) / sizeof(input_shape_[0]);
+    const size_t model_input_len = input_image_.size() * sizeof(float);
+    ORT_ABORT_ON_ERROR(g_ort->CreateTensorWithDataAsOrtValue(memory_info, input_image_.data(), model_input_len, input_shape_.data(),
+                                                           input_shape_len, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
+                                                           &input_tensor_));
+
+    output_tensor_ = NULL;
+    const size_t output_shape_len = sizeof(output_shape_) / sizeof(output_shape_[0]);
+    const size_t model_output_len = results_.size() * sizeof(float);
+    ORT_ABORT_ON_ERROR(g_ort->CreateTensorWithDataAsOrtValue(memory_info, results_.data(), model_output_len, output_shape_.data(),
+                                                           output_shape_len, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
+                                                           &output_tensor_));
   }
 
   std::ptrdiff_t Run() {
     const char* input_names[] = {"Input3"};
     const char* output_names[] = {"Plus214_Output_0"};
 
-    Ort::RunOptions run_options;
-    session_.Run(run_options, input_names, &input_tensor_, 1, output_names, &output_tensor_, 1);
+    OrtRunOptions* run_options;
+    g_ort->CreateRunOptions(&run_options);
+    ORT_ABORT_ON_ERROR(g_ort->Run(session_, run_options, input_names, &input_tensor_, 1, output_names, 1, &output_tensor_));
     softmax(results_);
     result_ = std::distance(results_.begin(), std::max_element(results_.begin(), results_.end()));
     return result_;
@@ -63,13 +101,13 @@ struct MNIST {
   int64_t result_{0};
 
  private:
-  Ort::Env env;
-  Ort::Session session_{nullptr};
+  OrtEnv* env_;
+  OrtSession* session_{nullptr};
 
-  Ort::Value input_tensor_{nullptr};
+  OrtValue* input_tensor_{nullptr};
   std::array<int64_t, 4> input_shape_{1, 1, width_, height_};
 
-  Ort::Value output_tensor_{nullptr};
+  OrtValue* output_tensor_{nullptr};
   std::array<int64_t, 2> output_shape_{1, 10};
 };
 
@@ -120,12 +158,7 @@ LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
 // The Windows entry point function
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE /*hPrevInstance*/, _In_ LPTSTR /*lpCmdLine*/,
                       _In_ int nCmdShow) {
-  try {
-    mnist_ = std::make_unique<MNIST>();
-  } catch (const Ort::Exception& exception) {
-    MessageBoxA(nullptr, exception.what(), "Error:", MB_OK);
-    return 0;
-  }
+  mnist_ = std::make_unique<MNIST>();
 
   {
     WNDCLASSEX wc{};
