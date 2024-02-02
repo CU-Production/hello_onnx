@@ -75,13 +75,13 @@ struct MNIST {
     
     OrtSessionOptions* session_options;
     g_ort->CreateSessionOptions(&session_options);
-    // g_ort->SetSessionGraphOptimizationLevel(session_options, GraphOptimizationLevel::ORT_ENABLE_ALL);
+    g_ort->SetSessionGraphOptimizationLevel(session_options, GraphOptimizationLevel::ORT_ENABLE_ALL);
     g_ort->SetSessionExecutionMode(session_options, ExecutionMode::ORT_SEQUENTIAL);
     g_ort->DisableMemPattern(session_options);
-    g_ort->AddFreeDimensionOverrideByName(session_options, "batch_size", 1);
+    // g_ort->AddFreeDimensionOverrideByName(session_options, "batch_size", 1);
 
     // OrtSessionOptionsAppendExecutionProvider_DML(session_options, 0);
-    g_ortDmlApi->SessionOptionsAppendExecutionProvider_DML(session_options, 0);
+    ORT_ABORT_ON_ERROR(g_ortDmlApi->SessionOptionsAppendExecutionProvider_DML(session_options, 0));
     //OrtSessionOptionsAppendExecutionProvider_Tensorrt(session_options, 0);
     //OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0);
 
