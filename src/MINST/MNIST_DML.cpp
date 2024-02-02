@@ -3,12 +3,14 @@
 #define UNICODE
 #include <windows.h>
 #include <windowsx.h>
+#include <onnxruntime_c_api.h>
 #include <dml_provider_factory.h>
 #include <array>
 #include <cmath>
 #include <algorithm>
 #include <memory>
 #include <vector>
+#include <string>
 #include <assert.h>
 
 #define ORT_ABORT_ON_ERROR(expr)                             \
@@ -36,6 +38,7 @@ static void softmax(T& input) {
 }
 
 const OrtApi* g_ort = NULL;
+const OrtDmlApi* g_ortDmlApi = NULL;
 
 // This is the structure to interface with the MNIST model
 // After instantiation, set the input_image_ data to be the 28x28 pixel image of the number to recognize
@@ -43,23 +46,44 @@ const OrtApi* g_ort = NULL;
 // result_ holds the index with highest probability (aka the number the model thinks is in the image)
 struct MNIST {
   MNIST() {
+    // assert(ORT_API_VERSION >= 12, "You should update you onnxruntime!\n");
+    // g_ort = OrtGetApiBase()->GetApi(12);
     g_ort = OrtGetApiBase()->GetApi(ORT_API_VERSION);
     if (!g_ort)
     {
       assert(0, "Failed to init ONNX Runtime engine.\n"); 
     }
 
+    g_ort->GetExecutionProviderApi("DML", ORT_API_VERSION, reinterpret_cast<const void**>(&g_ortDmlApi));
+    if (!g_ortDmlApi)
+    {
+      assert(0, "Failed to init ONNX Runtime DML provider API.\n"); 
+    }
+      
+    // Temporary pointers to fetch provider names
+    char** raw_provider_names;
+    int provider_count;
+
+    // Get available providers
+    g_ort->GetAvailableProviders(&raw_provider_names, &provider_count);
+
+    // Populate the global provider names vector
+    std::vector<std::string> provider_names = std::vector<std::string>(raw_provider_names, raw_provider_names + provider_count);
+
     ORT_ABORT_ON_ERROR(g_ort->CreateEnv(OrtLoggingLevel::ORT_LOGGING_LEVEL_WARNING, "testMNIST", &env_));
+    ORT_ABORT_ON_ERROR(g_ort->DisableTelemetryEvents(env_));
     
     OrtSessionOptions* session_options;
     g_ort->CreateSessionOptions(&session_options);
-    g_ort->SetSessionGraphOptimizationLevel(session_options, GraphOptimizationLevel::ORT_ENABLE_ALL);
+    // g_ort->SetSessionGraphOptimizationLevel(session_options, GraphOptimizationLevel::ORT_ENABLE_ALL);
     g_ort->SetSessionExecutionMode(session_options, ExecutionMode::ORT_SEQUENTIAL);
     g_ort->DisableMemPattern(session_options);
+    g_ort->AddFreeDimensionOverrideByName(session_options, "batch_size", 1);
 
-    //ORT_ABORT_ON_ERROR(OrtSessionOptionsAppendExecutionProvider_DML(session_options, 0));
-    //ORT_ABORT_ON_ERROR(OrtSessionOptionsAppendExecutionProvider_Tensorrt(session_options, 0));
-    //ORT_ABORT_ON_ERROR(OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0));
+    // OrtSessionOptionsAppendExecutionProvider_DML(session_options, 0);
+    g_ortDmlApi->SessionOptionsAppendExecutionProvider_DML(session_options, 0);
+    //OrtSessionOptionsAppendExecutionProvider_Tensorrt(session_options, 0);
+    //OrtSessionOptionsAppendExecutionProvider_CUDA(session_options, 0);
 
     ORT_ABORT_ON_ERROR(g_ort->CreateSession(env_, L"mnist.onnx", session_options, &session_));
 
