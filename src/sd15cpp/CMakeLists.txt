@@ -1,4 +1,7 @@
-add_executable(sd15cpp_txt2img_cli txt2img_cli.cpp)
+add_executable(sd15cpp_txt2img_cli
+        txt2img_cli.cpp
+        StableDiffusion/TensorHelper.h
+)
 target_link_libraries(sd15cpp_txt2img_cli PRIVATE directml onnxrt)
 add_custom_command(
         TARGET sd15cpp_txt2img_cli PRE_BUILD

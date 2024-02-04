@@ -1,3 +1,5 @@
+#include "StableDiffusion/TensorHelper.h"
+
 #include <iostream>
 
 int main()
