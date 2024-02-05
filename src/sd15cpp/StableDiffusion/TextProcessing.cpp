@@ -107,7 +107,8 @@ Tensor TextProcessing::TokenizeText(const std::string &text, const StableDiffusi
 
 Tensor TextProcessing::TextEncoder(const Tensor &tokenizedInput, const StableDiffusionConfig &config)
 {
-    Ort::SessionOptions sessionOptions = config.GetSessionOptionsForEp();
+//    Ort::SessionOptions sessionOptions{};
+    Ort::SessionOptions sessionOptions = config.GetSessionOptionsForEp(); // DirectML EP
 
     Ort::Session encodeSession{config.env, config.TextEncoderOnnxPath.c_str(), sessionOptions};
 
@@ -118,6 +119,9 @@ Tensor TextProcessing::TextEncoder(const Tensor &tokenizedInput, const StableDif
     encodeSession.Run({}, bindings);
 
     auto outputValues = bindings.GetOutputValues();
+    auto lastHiddenState = Tensor::FromOrtValue(outputValues[0]);
+    Tensor lastHiddenStateTensor{TensorType::Single, 1, 77, 768};
+    memcpy(lastHiddenStateTensor.Buffer.data(), lastHiddenState.Buffer.data(), lastHiddenState.Buffer.size());
 
-    return Tensor::FromOrtValue(outputValues[0]);
+    return lastHiddenStateTensor;
 }

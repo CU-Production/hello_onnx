@@ -42,10 +42,12 @@ public:
 //                Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_CUDA(sessionOptions, this->DeviceId));
 //                return sessionOptions;
             case ExecutionProvider::Cpu:
+                sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
                 return sessionOptions;
             case ExecutionProvider::DirectML:
             default:
                 sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+                sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
                 sessionOptions.DisableMemPattern();
                 Ort::ThrowOnError(OrtSessionOptionsAppendExecutionProvider_DML(sessionOptions, this->DeviceId));
                 return sessionOptions;
@@ -53,5 +55,6 @@ public:
     }
 
     Ort::Env env{ORT_LOGGING_LEVEL_WARNING};
+//    Ort::Env env{ORT_LOGGING_LEVEL_ERROR};
     Ort::MemoryInfo memoryInfo{nullptr};
 };
