@@ -1,6 +1,15 @@
 add_executable(sd15cpp_txt2img_cli
         txt2img_cli.cpp
-        StableDiffusion/TensorHelper.h
+        StableDiffusion/TensorType.h
+        StableDiffusion/TensorType.cpp
+        StableDiffusion/Tensor.h
+        StableDiffusion/Tensor.cpp
+        StableDiffusion/StableDiffusionConfig.h
+        StableDiffusion/UNet.cpp
+        StableDiffusion/UNet.h
+        StableDiffusion/TextProcessing.cpp
+        StableDiffusion/TextProcessing.h
+
 )
 target_link_libraries(sd15cpp_txt2img_cli PRIVATE directml onnxrt)
 add_custom_command(
