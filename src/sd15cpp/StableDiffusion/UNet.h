@@ -4,7 +4,6 @@
 
 class UNet {
 public:
-
     static void Inference(const std::string& prompt, const StableDiffusionConfig& config);
 };
 

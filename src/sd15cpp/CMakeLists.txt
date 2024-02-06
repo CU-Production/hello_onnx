@@ -5,13 +5,23 @@ add_executable(sd15cpp_txt2img_cli
         StableDiffusion/Tensor.h
         StableDiffusion/Tensor.cpp
         StableDiffusion/StableDiffusionConfig.h
-        StableDiffusion/UNet.cpp
         StableDiffusion/UNet.h
-        StableDiffusion/TextProcessing.cpp
+        StableDiffusion/UNet.cpp
         StableDiffusion/TextProcessing.h
+        StableDiffusion/TextProcessing.cpp
+        StableDiffusion/SchedulerBase.h
+        StableDiffusion/SchedulerBase.cpp
+        StableDiffusion/LMSDiscreteScheduler.h
+        StableDiffusion/LMSDiscreteScheduler.cpp
+        StableDiffusion/MathUtils.h
 
 )
-target_link_libraries(sd15cpp_txt2img_cli PRIVATE directml onnxrt)
+target_link_libraries(sd15cpp_txt2img_cli PRIVATE
+        directml
+        onnxrt
+        onnxrtEx
+        stb
+)
 add_custom_command(
         TARGET sd15cpp_txt2img_cli PRE_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different  ${CMAKE_CURRENT_SOURCE_DIR}/cliptokenizer.onnx "${CMAKE_CURRENT_BINARY_DIR}/"

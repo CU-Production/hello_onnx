@@ -16,7 +16,7 @@ target_include_directories(onnxrtEx INTERFACE OnnxRuntime.extensions/include)
 
 # NumCpp
 add_library(NumCpp INTERFACE)
-target_include_directories(NumCpp INTERFACE NumCpp)
+target_include_directories(NumCpp INTERFACE NumCpp/include)
 
 # stb
 add_library(stb INTERFACE)
