@@ -216,6 +216,6 @@ MachineLearning::Tensor LMSDiscreteScheduler::Step(const MachineLearning::Tensor
     // prevSample += sumTensor;
     prevSample.UnaryOperation<float>(sumTensor, [](float a, float b){ return a + b; });
 
-    std::cout << "prevSample[0]" << prevSample.AsPointer<float>()[0] << std::endl;
+    std::cout << "prevSample[0] : " << prevSample.AsPointer<float>()[0] << std::endl;
     return prevSample;
 }

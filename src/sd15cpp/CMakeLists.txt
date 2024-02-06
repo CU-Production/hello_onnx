@@ -14,6 +14,8 @@ add_executable(sd15cpp_txt2img_cli
         StableDiffusion/LMSDiscreteScheduler.h
         StableDiffusion/LMSDiscreteScheduler.cpp
         StableDiffusion/MathUtils.h
+        StableDiffusion/VaeDecoder.h
+        StableDiffusion/VaeDecoder.cpp
 
 )
 target_link_libraries(sd15cpp_txt2img_cli PRIVATE

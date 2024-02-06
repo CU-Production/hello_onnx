@@ -1,6 +1,7 @@
 #include "UNet.h"
 #include "TextProcessing.h"
 #include "LMSDiscreteScheduler.h"
+#include "VaeDecoder.h"
 #include <iostream>
 #define _USE_MATH_DEFINES
 #include <math.h>
@@ -99,7 +100,7 @@ void UNet::Inference(const std::string &prompt, const StableDiffusionConfig &con
             << std::endl;
 
         Tensor timeStepTensor{TensorType::Int64, 1};
-        timeStepTensor.AsPointer<uint64_t >()[0] = timesteps[t];
+        timeStepTensor.AsPointer<int64_t >()[0] = timesteps[t];
 
         Ort::IoBinding bindings{ unetSession };
         bindings.BindInput("encoder_hidden_states", textEmbeddings.ToOrtValue());
@@ -122,7 +123,12 @@ void UNet::Inference(const std::string &prompt, const StableDiffusionConfig &con
 
         // LMS Scheduler Step
         latents = scheduler.Step(noisePred, timesteps[t], latents);
-        std::cout << "latents result after step {t} min {latents.Min()} max {latents.Max()}" << std::endl;
+        auto latentsValuepointer = latents.AsPointer<float>();
+        std::vector<float> latentsValueVector(latentsValuepointer, latentsValuepointer + latents.Size());
+        std::cout << "latents result after step { " << t <<" }"
+            << " min { " << *std::min_element(latentsValueVector.begin(), latentsValueVector.end()) << " }"
+            << " max { " << *std::max_element(latentsValueVector.begin(), latentsValueVector.end()) << " }"
+            << std::endl;
     }
 
     // Scale and decode the image latents with vae.
@@ -130,4 +136,5 @@ void UNet::Inference(const std::string &prompt, const StableDiffusionConfig &con
     latents = latents * (1.0f / 0.18215f);
 
     // Decode image
+    auto imageResultTensor = VaeDecoder::Decoder(latents, config);
 }

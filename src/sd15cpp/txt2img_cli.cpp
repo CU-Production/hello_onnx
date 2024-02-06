@@ -26,9 +26,9 @@ int main()
 
     config.memoryInfo = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
 
-    auto timeEnd = std::chrono::high_resolution_clock::now();
-
     UNet::Inference(prompt, config);
+
+    auto timeEnd = std::chrono::high_resolution_clock::now();
 
     int milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeStart).count();
     std::cout << "Time taken: " << milliseconds << "ms" << std::endl;
