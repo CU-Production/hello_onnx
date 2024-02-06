@@ -3,47 +3,49 @@
 
 Tensor TextProcessing::PreprocessText(const std::string &prompt, const StableDiffusionConfig &config)
 {
-    Tensor textTokenized = TokenizeText(prompt, config);
+    auto textTokenized = TokenizeText(prompt, config);
     Tensor textPromptEmbeddings = TextEncoder(textTokenized, config);
 
-    Tensor uncondInputTokens = CreateUncondInput();
+    auto uncondInputTokens = CreateUncondInput();
     Tensor uncondEmbedding = TextEncoder(uncondInputTokens, config);
 
     Tensor textEmbeddings{ TensorType::Single, 2, 77, 768 };
 
     auto textPromptEmbeddingsSize = textPromptEmbeddings.Size();
     auto textPromptEmbeddingsValue = textPromptEmbeddings.AsPointer<float>();
-    auto uncondEmbeddingValue = textPromptEmbeddings.AsPointer<float>();
+    auto uncondEmbeddingValue = uncondEmbedding.AsPointer<float>();
 
     for (int i = 0; i < textPromptEmbeddingsSize; ++i)
     {
-//        tmpValue[0, i / 768, i % 768] = uncondEmbeddingValue[i];
-//        tmpValue[1, i / 768, i % 768] = textPromptEmbeddingsValue[i];
+//        textEmbeddings[0, i / 768, i % 768] = uncondEmbeddingValue[i];
+//        textEmbeddings[1, i / 768, i % 768] = textPromptEmbeddingsValue[i];
         auto tempValue0 = textEmbeddings.AsPointer<float>(0, i / 768);
-        auto tempValue1 = textEmbeddings.AsPointer<float>(0, i / 768);
+        auto tempValue1 = textEmbeddings.AsPointer<float>(1, i / 768);
 
         tempValue0[i % 768]  = uncondEmbeddingValue[i];
         tempValue1[i % 768]  = textPromptEmbeddingsValue[i];
     }
 
+    std::vector<float> tempValue0(textEmbeddings.AsPointer<float>(0), textEmbeddings.AsPointer<float>(0)+77*768);
+    std::vector<float> tempValue1(textEmbeddings.AsPointer<float>(1), textEmbeddings.AsPointer<float>(1)+77*768);
+
     return textEmbeddings;
 }
 
-Tensor TextProcessing::CreateUncondInput()
+std::vector<int32_t> TextProcessing::CreateUncondInput()
 {
     constexpr int32_t blankTokenValue = 49407;
     constexpr int32_t modelMaxLength = 77;
-    Tensor result{ TensorType::Int32, 1, modelMaxLength };
-    std::ranges::fill(result.AsSpan<int32_t>(), blankTokenValue);
-    *result.AsPointer<int32_t>(0) = 49406;
+    std::vector<int> result(modelMaxLength, blankTokenValue);
+    result[0] = 49406;
     return result;
 }
 
-Tensor TextProcessing::TokenizeText(const std::string &text, const StableDiffusionConfig &config)
+std::vector<int32_t> TextProcessing::TokenizeText(const std::string &text, const StableDiffusionConfig &config)
 {
     Ort::SessionOptions sessionOptions{};
-    sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_DISABLE_ALL);
-    sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
+    // sessionOptions.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    // sessionOptions.SetExecutionMode(ExecutionMode::ORT_SEQUENTIAL);
     sessionOptions.RegisterCustomOpsLibrary(config.OrtExtensionsPath.c_str());
 
     Ort::Session tokenizeSession{config.env, config.TokenizerOnnxPath.c_str(), sessionOptions};
@@ -52,9 +54,8 @@ Tensor TextProcessing::TokenizeText(const std::string &text, const StableDiffusi
 
     const std::vector<const char*>& texts = std::vector<const char*>{ text.data() };
 
-    std::vector<int64_t> inputShape{ int64_t(texts.size()) };
+    std::vector<int64_t> inputShape{ int64_t(1) };
     auto inputValue = Ort::Value::CreateTensor(allocator, inputShape.data(), inputShape.size(), ONNX_TENSOR_ELEMENT_DATA_TYPE_STRING);
-
 
     inputValue.FillStringTensor(texts.data(), texts.size());
 
@@ -76,44 +77,38 @@ Tensor TextProcessing::TokenizeText(const std::string &text, const StableDiffusi
         auto pMask = attention_mask.AsPointer<int64_t>(i);
         for (size_t j = 0; j < input_ids.Shape[1]; j++)
         {
-            if(*pMask++)
+            if(pMask[j])
             {
-                std::cout << int32_t(*pSource++) << " ";
+                std::cout << (int32_t)pSource[j] << " ";
             }
         }
     }
     std::cout << std::endl;
 
     // Pad results to a fixed size
-    Tensor result{ TensorType::Int32, input_ids.Shape[0], input_ids.Shape[1] };
-
     constexpr int32_t blankTokenValue = 49407;
-
-    for (size_t i = 0; i < input_ids.Shape[0]; i++)
+    std::vector<int> result(77, blankTokenValue);
+    auto inputIdsValue = input_ids.AsPointer<int64_t>();
+    for (int i = 0; i < input_ids.Size(); ++i)
     {
-        auto sToken = result.AsPointer<int32_t>(i);
-        auto pToken = sToken;
-
-        auto pSource = input_ids.AsPointer<int64_t>(i);
-        auto pMask = attention_mask.AsPointer<int64_t>(i);
-        for (size_t j = 0; j < input_ids.Shape[1]; j++)
-        {
-            *pToken++ = *pMask++ ? int32_t(*pSource++) : blankTokenValue;
-        }
+        result[i] = (int32_t)inputIdsValue[i];
     }
 
     return result;
 }
 
-Tensor TextProcessing::TextEncoder(const Tensor &tokenizedInput, const StableDiffusionConfig &config)
+Tensor TextProcessing::TextEncoder(const std::vector<int32_t> &tokenizedInput, const StableDiffusionConfig &config)
 {
+    Tensor input_ids{TensorType::Int32, 1, tokenizedInput.size()};
+    memcpy(input_ids.AsPointer<int32_t>(), tokenizedInput.data(), tokenizedInput.size() * sizeof(int32_t));
+
 //    Ort::SessionOptions sessionOptions{};
     Ort::SessionOptions sessionOptions = config.GetSessionOptionsForEp(); // DirectML EP
 
     Ort::Session encodeSession{config.env, config.TextEncoderOnnxPath.c_str(), sessionOptions};
 
     Ort::IoBinding bindings{ encodeSession };
-    bindings.BindInput("input_ids", tokenizedInput.ToOrtValue());
+    bindings.BindInput("input_ids", input_ids.ToOrtValue());
     bindings.BindOutput("last_hidden_state", config.memoryInfo);
 
     encodeSession.Run({}, bindings);

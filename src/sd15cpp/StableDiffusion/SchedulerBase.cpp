@@ -13,7 +13,8 @@ std::vector<float> SchedulerBase::Interpolate(const std::vector<float>& timestep
         result[i] = std::lerp(sigmas[previousIndex], sigmas[nextIndex], trainStep - floor(trainStep));
     }
 
-    result.push_back(0.000);
+    // result.push_back(0.000);
+    result[timesteps.size()] = 0.000;
     return result;
 }
 
