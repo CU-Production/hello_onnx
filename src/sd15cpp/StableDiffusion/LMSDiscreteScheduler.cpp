@@ -104,7 +104,7 @@ std::vector<int> LMSDiscreteScheduler::SetTimesteps(int num_inference_steps)
 {
     float start = 0;
     float stop = (float)_numTrainTimesteps - 1;
-    std::vector<float> timesteps = MathUtils::linspace(start, stop, _numTrainTimesteps, true);
+    std::vector<float> timesteps = MathUtils::linspace(start, stop, num_inference_steps, true);
 
     this->Timesteps.assign(timesteps.size(), 0);
     for (int i = 0; i < timesteps.size(); i++) {
@@ -185,7 +185,7 @@ MachineLearning::Tensor LMSDiscreteScheduler::Step(const MachineLearning::Tensor
     std::vector<float> lmsCoeffs(order, 0);
     for (int currOrder = 0; currOrder < order; currOrder++)
     {
-        lmsCoeffs[currOrder] = GetLmsCoefficient(order, stepIndex, currOrder);
+        lmsCoeffs[currOrder] = (float)GetLmsCoefficient(order, stepIndex, currOrder);
     }
 
     // 4. compute previous sample based on the derivative path
