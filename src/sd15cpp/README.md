@@ -31,3 +31,24 @@ std::string prompt = "a photo of an astronaut riding a horse on mars";
 - https://github.com/cassiebreviu/StableDiffusion
 - https://onnxruntime.ai/docs/tutorials/csharp/stable-diffusion-csharp.html
 - https://huggingface.co/runwayml/stable-diffusion-v1-5/tree/onnx
+
+# Summary
+
+Date : 2024-02-07 14:58:46
+
+Directory hello_onnx\\src\\sd15cpp
+
+Total : 18 files,  1316 codes, 92 comments, 308 blanks, all 1716 lines
+
+## Languages
+| language | files | code | comment | blank | total |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| C++ | 17 | 1,291 | 92 | 299 | 1,682 |
+| Markdown | 1 | 25 | 0 | 9 | 34 |
+
+## Directories
+| path | files | code | comment | blank | total |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| . | 18 | 1,316 | 92 | 308 | 1,716 |
+| . (Files) | 2 | 60 | 12 | 23 | 95 |
+| StableDiffusion | 16 | 1,256 | 80 | 285 | 1,621 |
