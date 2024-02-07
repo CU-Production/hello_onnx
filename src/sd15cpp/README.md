@@ -11,19 +11,19 @@ git clone https://huggingface.co/runwayml/stable-diffusion-v1-5 -b onnx
 
 2. change config in program.cs
 
-```csharp
-// program.cs
-config.TextEncoderOnnxPath = @"G:\wrokspace2\ML\stable-diffusion-v1-5\text_encoder\model.onnx";
-config.UnetOnnxPath        = @"G:\wrokspace2\ML\stable-diffusion-v1-5\unet\model.onnx";
-config.VaeDecoderOnnxPath  = @"G:\wrokspace2\ML\stable-diffusion-v1-5\vae_decoder\model.onnx";
-config.SafetyModelPath     = @"G:\wrokspace2\ML\stable-diffusion-v1-5\safety_checker\model.onnx";
+```cpp
+// txt2img_cli.cpp
+config.TextEncoderOnnxPath = L"G:/wrokspace2/ML/stable-diffusion-v1-5/text_encoder/model.onnx";
+config.UnetOnnxPath        = L"G:/wrokspace2/ML/stable-diffusion-v1-5/unet/model.onnx";
+config.VaeDecoderOnnxPath  = L"G:/wrokspace2/ML/stable-diffusion-v1-5/vae_decoder/model.onnx";
+config.SafetyModelPath     = L"G:/wrokspace2/ML/stable-diffusion-v1-5/safety_checker/model.onnx";
 ```
 
 3. change prompt and run
 
-```csharp
-// program.cs
-var prompt = "a fireplace in an old cabin in the woods";
+```cpp
+// txt2img_cli.cpp
+std::string prompt = "a photo of an astronaut riding a horse on mars";
 ```
 
 ## references

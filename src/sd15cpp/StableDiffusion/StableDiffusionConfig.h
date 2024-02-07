@@ -54,7 +54,7 @@ public:
         }
     }
 
-    Ort::Env env{ORT_LOGGING_LEVEL_WARNING};
-//    Ort::Env env{ORT_LOGGING_LEVEL_ERROR};
+//    Ort::Env env{ORT_LOGGING_LEVEL_WARNING};
+    Ort::Env env{ORT_LOGGING_LEVEL_ERROR};
     Ort::MemoryInfo memoryInfo{nullptr};
 };

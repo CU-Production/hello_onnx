@@ -26,9 +26,6 @@ Tensor TextProcessing::PreprocessText(const std::string &prompt, const StableDif
         tempValue1[i % 768]  = textPromptEmbeddingsValue[i];
     }
 
-    std::vector<float> tempValue0(textEmbeddings.AsPointer<float>(0), textEmbeddings.AsPointer<float>(0)+77*768);
-    std::vector<float> tempValue1(textEmbeddings.AsPointer<float>(1), textEmbeddings.AsPointer<float>(1)+77*768);
-
     return textEmbeddings;
 }
 

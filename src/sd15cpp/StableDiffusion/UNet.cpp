@@ -8,7 +8,7 @@
 
 using namespace MachineLearning;
 
-Tensor UNet::GenerateLatentSample(size_t height, size_t width, int seed, float initNoiseSigma)
+Tensor UNet::GenerateLatentSample(size_t height, size_t width, uint32_t seed, float initNoiseSigma)
 {
     std::mt19937 mt(seed);
     std::uniform_real_distribution<double> dist; // default [0, 1) range:
@@ -35,7 +35,7 @@ Tensor UNet::GenerateLatentSample(size_t height, size_t width, int seed, float i
     return latents;
 }
 
-Tensor UNet::GenerateLatentSample(const StableDiffusionConfig& config, int seed, float initNoiseSigma)
+Tensor UNet::GenerateLatentSample(const StableDiffusionConfig& config, uint32_t seed, float initNoiseSigma)
 {
     return GenerateLatentSample(config.Height, config.Width, seed, initNoiseSigma);
 }
@@ -55,7 +55,7 @@ Tensor UNet::performGuidance(const Tensor &noisePred, const Tensor &noisePredTex
                 for (int l = 0; l < noisePred.Shape[3]; l++)
                 {
 //                    result[i, j, k, l] = noisePred[i, j, k, l] + (float)guidanceScale * (noisePredText[i, j, k, l] - noisePred[i, j, k, l]);
-                    resultValueArray[l] = noisePredIJKValueArray[l] + (float)guidanceScale * (noisePredTextIJKValueArray[l] - noisePredIJKValueArray[l]);
+                    resultValueArray[l] = noisePredIJKValueArray[l] + ((float)guidanceScale * (noisePredTextIJKValueArray[l] - noisePredIJKValueArray[l]));
                 }
             }
         }
@@ -71,16 +71,17 @@ std::vector<uint8_t> UNet::Inference(const std::string &prompt, const StableDiff
     LMSDiscreteScheduler scheduler{};
     auto timesteps = scheduler.SetTimesteps(config.NumInferenceSteps);
 
-    std::srand(std::time(nullptr));
+    std::mt19937 mt(std::time(nullptr));
 
-//    int seed = 329922609;
-    int seed = std::rand();
+//    uint32_t seed = 329922609;
+    uint32_t seed = mt();
     std::cout << "Seed generated: " << seed << std::endl;
 
     // create latent tensor
     auto latents = GenerateLatentSample(config, seed, scheduler.InitNoiseSigma);
 
-    auto sessionOptions = config.GetSessionOptionsForEp();
+//    Ort::SessionOptions sessionOptions{}; // cpu 13600KF: 15 steps ~  51s
+    auto sessionOptions = config.GetSessionOptionsForEp(); // directML 3070: 15 steps ~  16s
 
     Ort::Session unetSession{config.env, config.UnetOnnxPath.c_str(), sessionOptions};
 
@@ -138,7 +139,6 @@ std::vector<uint8_t> UNet::Inference(const std::string &prompt, const StableDiff
     // Decode image
     auto imageResultTensor = VaeDecoder::Decoder(latents, config);
 
-//    auto imageVec = imageResultTensor.ToTextureData(ColorNormalization::LinearPlusMinusOne);
     auto imageVec = imageResultTensor.ToTextureRGBA8DataEx(ColorNormalization::LinearPlusMinusOne);
 
     return imageVec[0];
