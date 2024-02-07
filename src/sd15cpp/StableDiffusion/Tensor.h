@@ -53,6 +53,7 @@ namespace MachineLearning
     size_t Size(size_t dimension = 0) const;
 
     std::vector<std::vector<float>> ToTextureData(ColorNormalization normalization) const;
+    std::vector<std::vector<uint8_t>> ToTextureRGBA8DataEx(ColorNormalization normalization) const;
 
     const uint8_t* AsPointer(size_t x = 0, size_t y = 0, size_t z = 0, size_t w = 0) const;
     uint8_t* AsPointer(size_t x = 0, size_t y = 0, size_t z = 0, size_t w = 0);

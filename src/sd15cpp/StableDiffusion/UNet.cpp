@@ -63,7 +63,7 @@ Tensor UNet::performGuidance(const Tensor &noisePred, const Tensor &noisePredTex
     return result;
 }
 
-std::vector<float> UNet::Inference(const std::string &prompt, const StableDiffusionConfig &config)
+std::vector<uint8_t> UNet::Inference(const std::string &prompt, const StableDiffusionConfig &config)
 {
     // Preprocess text
     auto textEmbeddings = TextProcessing::PreprocessText(prompt, config);
@@ -138,7 +138,8 @@ std::vector<float> UNet::Inference(const std::string &prompt, const StableDiffus
     // Decode image
     auto imageResultTensor = VaeDecoder::Decoder(latents, config);
 
-    auto imageVec = imageResultTensor.ToTextureData(ColorNormalization::LinearPlusMinusOne);
+//    auto imageVec = imageResultTensor.ToTextureData(ColorNormalization::LinearPlusMinusOne);
+    auto imageVec = imageResultTensor.ToTextureRGBA8DataEx(ColorNormalization::LinearPlusMinusOne);
 
     return imageVec[0];
 }

@@ -282,6 +282,55 @@ namespace MachineLearning
     }
   }
 
+  std::vector<std::vector<uint8_t>> Tensor::ToTextureRGBA8DataEx(ColorNormalization normalization) const
+  {
+    std::vector<std::vector<uint8_t>> results;
+    results.reserve(Shape[0]);
+    auto width = uint32_t(Shape[3]);
+    auto height = uint32_t(Shape[2]);
+    for (size_t i = 0u; i < Shape[0]; i++)
+    {
+      std::vector<uint8_t> result;
+      results.reserve(width * height * 4);
+      auto rSource = AsPointer<float>(i, 0);
+      auto gSource = AsPointer<float>(i, 1);
+      auto bSource = AsPointer<float>(i, 2);
+      for (uint32_t y = 0u; y < height; y++)
+      {
+        for (uint32_t x = 0u; x < width; x++)
+        {
+          std::array<float , 4> color{ *rSource++, *gSource++, *bSource++, 1.f };
+          std::array<uint8_t , 4> byteColor{ 0, 0, 0, 255 };
+          switch (normalization)
+          {
+            case ColorNormalization::LinearPlusMinusOne:
+              byteColor = {
+                uint8_t((color[0] / 2.f + 0.5f) * 255),
+                uint8_t((color[1] / 2.f + 0.5f) * 255),
+                uint8_t((color[2] / 2.f + 0.5f) * 255),
+                255 };
+              break;
+            case ColorNormalization::LinearZeroToOne:
+              byteColor = {
+                uint8_t(color[0] * 255),
+                uint8_t(color[1] * 255),
+                uint8_t(color[2] * 255),
+                255 };
+              break;
+            default:
+              throw std::logic_error("Normalization mode not implemented.");
+          }
+          result.push_back(byteColor[0]);
+          result.push_back(byteColor[1]);
+          result.push_back(byteColor[2]);
+          result.push_back(byteColor[3]);
+        }
+      }
+      results.push_back(std::move(result));
+    }
+    return results;
+  }
+
   const uint8_t* Tensor::AsPointer(size_t x, size_t y, size_t z, size_t w) const
   {
     shape_t index{ x, y, z, w };
