@@ -14,10 +14,6 @@ target_link_libraries(directML INTERFACE DirectML)
 add_library(onnxrtEx INTERFACE)
 target_include_directories(onnxrtEx INTERFACE OnnxRuntime.extensions/include)
 
-# NumCpp
-add_library(NumCpp INTERFACE)
-target_include_directories(NumCpp INTERFACE NumCpp/include)
-
 # stb
 add_library(stb INTERFACE)
 target_include_directories(stb INTERFACE stb)

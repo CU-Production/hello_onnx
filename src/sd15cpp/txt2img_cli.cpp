@@ -19,13 +19,9 @@ int main()
     std::cout << prompt << std::endl;
 
     StableDiffusionConfig config{};
-//    config.NumInferenceSteps = 15;
-    config.NumInferenceSteps = 50;
-//    config.NumInferenceSteps = 100;
-//    config.GuidanceScale = 7.5;
-//    config.GuidanceScale = 5;
-//    config.GuidanceScale = 2.5;
-    config.GuidanceScale = 1.5;
+    config.NumInferenceSteps = 15;
+//    config.NumInferenceSteps = 50;
+    config.GuidanceScale = 7.5;
     config.ExecutionProviderTarget = StableDiffusionConfig::ExecutionProvider::DirectML;
     config.DeviceId = 0; // on notebook, may have more than one gpu, and discrete gpu may be 1, 0 is integrated GPU
 

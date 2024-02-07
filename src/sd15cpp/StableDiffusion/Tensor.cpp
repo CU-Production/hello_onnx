@@ -305,9 +305,9 @@ namespace MachineLearning
           {
             case ColorNormalization::LinearPlusMinusOne:
               byteColor = {
-                uint8_t((color[0] / 2.f + 0.5f) * 255),
-                uint8_t((color[1] / 2.f + 0.5f) * 255),
-                uint8_t((color[2] / 2.f + 0.5f) * 255),
+                (uint8_t)std::round(std::clamp(color[0] / 2.f + 0.5f, 0.0f, 1.0f) * 255),
+                (uint8_t)std::round(std::clamp(color[1] / 2.f + 0.5f, 0.0f, 1.0f) * 255),
+                (uint8_t)std::round(std::clamp(color[2] / 2.f + 0.5f, 0.0f, 1.0f) * 255),
                 255 };
               break;
             case ColorNormalization::LinearZeroToOne:
