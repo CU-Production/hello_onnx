@@ -9,7 +9,7 @@ add_custom_command(
 )
 
 add_executable(MNIST_DML MNIST_DML.cpp)
-target_link_libraries(MNIST_DML PRIVATE directml onnxrt onnxrtEx NumCpp stb)
+target_link_libraries(MNIST_DML PRIVATE directml onnxrt onnxrtEx stb)
 target_link_options(MNIST_DML PRIVATE "/SUBSYSTEM:WINDOWS")
 add_custom_command(
         TARGET MNIST_DML PRE_BUILD
