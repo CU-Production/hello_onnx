@@ -15,8 +15,124 @@
 #include <iostream>
 #include <chrono>
 #include <ctime>
+#include <thread>
+#include <mutex>
+#include <atomic>
+#include <string>
+#include <vector>
+#include <sstream>
+#include <iomanip>
 
 sg_pass_action pass_action{};
+
+// Global state for the application
+struct AppState {
+    // UI inputs
+    char prompt[512] = "a photo of an astronaut riding a horse on mars";
+    int numInferenceSteps = 15;
+    float guidanceScale = 7.5f;
+    int deviceId = 0;
+    
+    // Model paths
+    char textEncoderPath[512] = "E:/SW/ML/stable-diffusion-1.5-onnx/text_encoder/model.onnx";
+    char unetPath[512] = "E:/SW/ML/stable-diffusion-1.5-onnx/unet/model.onnx";
+    char vaeDecoderPath[512] = "E:/SW/ML/stable-diffusion-1.5-onnx/vae_decoder/model.onnx";
+    char safetyModelPath[512] = "E:/SW/ML/stable-diffusion-1.5-onnx/safety_checker/model.onnx";
+    
+    // Generation state
+    std::atomic<bool> isGenerating{false};
+    std::atomic<bool> hasNewImage{false};
+    std::string statusMessage = "Ready";
+    std::string lastGenerationTime = "";
+    
+    // Image data
+    std::vector<uint8_t> imageData;
+    sg_image generatedImage = {0};
+    bool imageValid = false;
+    
+    // Thread
+    std::thread* generationThread = nullptr;
+    std::mutex dataMutex;
+} appState;
+
+// Helper function to convert std::string to std::wstring
+std::wstring stringToWString(const std::string& str) {
+    if (str.empty()) return std::wstring();
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+    std::wstring wstrTo(size_needed, 0);
+    MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
+    return wstrTo;
+}
+
+// Generation function to run in background thread
+void generateImage() {
+    try {
+        appState.statusMessage = "Initializing...";
+        auto timeStart = std::chrono::high_resolution_clock::now();
+        
+        std::string prompt;
+        StableDiffusionConfig config{};
+        
+        {
+            std::lock_guard<std::mutex> lock(appState.dataMutex);
+            prompt = std::string(appState.prompt);
+            config.NumInferenceSteps = appState.numInferenceSteps;
+            config.GuidanceScale = appState.guidanceScale;
+            config.ExecutionProviderTarget = StableDiffusionConfig::ExecutionProvider::DirectML;
+            config.DeviceId = appState.deviceId;
+            
+            config.TextEncoderOnnxPath = stringToWString(std::string(appState.textEncoderPath));
+            config.UnetOnnxPath = stringToWString(std::string(appState.unetPath));
+            config.VaeDecoderOnnxPath = stringToWString(std::string(appState.vaeDecoderPath));
+            config.SafetyModelPath = stringToWString(std::string(appState.safetyModelPath));
+            
+            config.memoryInfo = Ort::MemoryInfo::CreateCpu(OrtDeviceAllocator, OrtMemTypeCPU);
+        }
+        
+        appState.statusMessage = "Generating image...";
+        auto rgbaData = UNet::Inference(prompt, config);
+        
+        auto timeEnd = std::chrono::high_resolution_clock::now();
+        uint64_t milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeStart).count();
+        
+        // Save image to file
+        std::time_t t = std::time(0);
+        std::tm* now = std::localtime(&t);
+        char buf[80];
+        strftime(buf, sizeof(buf), "%Y%m%d%H%M%S", now);
+        
+        char png_file_path[256];
+        char jpg_file_path[256];
+        snprintf(png_file_path, sizeof(png_file_path), "sd_image_%s_Steps%d_Scale%.1f.png", 
+            buf, config.NumInferenceSteps, config.GuidanceScale);
+        snprintf(jpg_file_path, sizeof(jpg_file_path), "sd_image_%s_Steps%d_Scale%.1f.jpg", 
+            buf, config.NumInferenceSteps, config.GuidanceScale);
+        
+        stbi_write_png(png_file_path, 512, 512, 4, rgbaData.data(), 512*4);
+        stbi_write_jpg(jpg_file_path, 512, 512, 4, rgbaData.data(), 100);
+        
+        {
+            std::lock_guard<std::mutex> lock(appState.dataMutex);
+            appState.imageData = std::move(rgbaData);
+            appState.hasNewImage = true;
+            
+            char timeStr[64];
+            snprintf(timeStr, sizeof(timeStr), "%.2fs", milliseconds / 1000.0f);
+            appState.lastGenerationTime = timeStr;
+            
+            char statusStr[512];
+            snprintf(statusStr, sizeof(statusStr), "Image generated in %.2fs (saved as %s)", 
+                milliseconds / 1000.0f, png_file_path);
+            appState.statusMessage = statusStr;
+        }
+        
+    } catch (const std::exception& e) {
+        std::lock_guard<std::mutex> lock(appState.dataMutex);
+        appState.statusMessage = std::string("Error: ") + e.what();
+    }
+    
+    appState.isGenerating = false;
+}
 
 void init() {
     sg_desc desc = {};
@@ -73,9 +189,6 @@ void init() {
     pass_action.colors[0].clear_value = {0.45f, 0.55f, 0.60f, 1.00f};
 }
 
-bool show_demo_window = true;
-bool show_another_window = false;
-ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 void frame() {
     const int width = sapp_width();
     const int height = sapp_height();
@@ -84,28 +197,123 @@ void frame() {
 
     simgui_new_frame({ width, height, sapp_frame_duration(), sapp_dpi_scale() });
 
-    {
-        static float f = 0.0f;
-        static int counter = 0;
-
-        ImGui::Begin("Hello, world!");                          // Create a window called "Hello, world!" and append into it.
-
-        ImGui::Text("This is some useful text.");               // Display some text (you can use a format strings too)
-        ImGui::Checkbox("Demo Window", &show_demo_window);      // Edit bools storing our window open/close state
-        ImGui::Checkbox("Another Window", &show_another_window);
-
-        ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-        ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-        if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-            counter++;
-        ImGui::SameLine();
-        ImGui::Text("counter = %d", counter);
-
-        ImGuiIO& io = ImGui::GetIO();
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / io.Framerate, io.Framerate);
-        ImGui::End();
+    // Check if there's a new image to upload to GPU
+    if (appState.hasNewImage.load()) {
+        std::lock_guard<std::mutex> lock(appState.dataMutex);
+        if (!appState.imageData.empty()) {
+            // Destroy old image if exists
+            if (appState.imageValid && appState.generatedImage.id != 0) {
+                sg_destroy_image(appState.generatedImage);
+            }
+            
+            // Create new image
+            sg_image_desc img_desc{};
+            img_desc.width = 512;
+            img_desc.height = 512;
+            img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+            img_desc.min_filter = SG_FILTER_LINEAR;
+            img_desc.mag_filter = SG_FILTER_LINEAR;
+            img_desc.data.subimage[0][0].ptr = appState.imageData.data();
+            img_desc.data.subimage[0][0].size = appState.imageData.size();
+            
+            appState.generatedImage = sg_make_image(&img_desc);
+            appState.imageValid = true;
+            appState.hasNewImage = false;
+        }
     }
+
+    // Main window
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(450, height), ImGuiCond_Always);
+    ImGui::Begin("Stable Diffusion Text to Image", nullptr, 
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    
+    ImGui::SeparatorText("Prompt");
+    ImGui::InputTextMultiline("##prompt", appState.prompt, sizeof(appState.prompt), 
+        ImVec2(-1, 80), ImGuiInputTextFlags_None);
+    
+    ImGui::SeparatorText("Generation Parameters");
+    ImGui::SliderInt("Inference Steps", &appState.numInferenceSteps, 1, 100);
+    ImGui::SliderFloat("Guidance Scale", &appState.guidanceScale, 1.0f, 20.0f, "%.1f");
+    ImGui::SliderInt("Device ID", &appState.deviceId, 0, 3);
+    
+    ImGui::SeparatorText("Model Paths");
+    if (ImGui::TreeNode("Model Configuration")) {
+        ImGui::InputText("Text Encoder", appState.textEncoderPath, sizeof(appState.textEncoderPath));
+        ImGui::InputText("UNet", appState.unetPath, sizeof(appState.unetPath));
+        ImGui::InputText("VAE Decoder", appState.vaeDecoderPath, sizeof(appState.vaeDecoderPath));
+        ImGui::InputText("Safety Model", appState.safetyModelPath, sizeof(appState.safetyModelPath));
+        ImGui::TreePop();
+    }
+    
+    ImGui::Separator();
+    
+    // Generate button
+    bool generating = appState.isGenerating.load();
+    if (generating) {
+        ImGui::BeginDisabled();
+    }
+    
+    if (ImGui::Button("Generate Image", ImVec2(-1, 40))) {
+        // Start generation in background thread
+        if (appState.generationThread != nullptr) {
+            if (appState.generationThread->joinable()) {
+                appState.generationThread->join();
+            }
+            delete appState.generationThread;
+        }
+        
+        appState.isGenerating = true;
+        appState.generationThread = new std::thread(generateImage);
+    }
+    
+    if (generating) {
+        ImGui::EndDisabled();
+    }
+    
+    // Status
+    ImGui::Separator();
+    if (generating) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Status: %s", appState.statusMessage.c_str());
+        ImGui::ProgressBar(-1.0f * ImGui::GetTime(), ImVec2(-1, 0));
+    } else {
+        ImGui::Text("Status: %s", appState.statusMessage.c_str());
+    }
+    
+    if (!appState.lastGenerationTime.empty()) {
+        ImGui::Text("Last generation time: %s", appState.lastGenerationTime.c_str());
+    }
+    
+    ImGuiIO& io = ImGui::GetIO();
+    ImGui::Text("FPS: %.1f", io.Framerate);
+    
+    ImGui::End();
+    
+    // Image display window
+    ImGui::SetNextWindowPos(ImVec2(450, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(width - 450, height), ImGuiCond_Always);
+    ImGui::Begin("Generated Image", nullptr, 
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
+    
+    if (appState.imageValid && appState.generatedImage.id != 0) {
+        ImVec2 windowSize = ImGui::GetContentRegionAvail();
+        float imageSize = std::min(windowSize.x, windowSize.y);
+        
+        // Center the image
+        ImVec2 imagePos = ImGui::GetCursorPos();
+        imagePos.x += (windowSize.x - imageSize) * 0.5f;
+        imagePos.y += (windowSize.y - imageSize) * 0.5f;
+        ImGui::SetCursorPos(imagePos);
+        
+        ImGui::Image((ImTextureID)(uintptr_t)appState.generatedImage.id, 
+            ImVec2(imageSize, imageSize));
+    } else {
+        ImVec2 windowSize = ImGui::GetContentRegionAvail();
+        ImGui::SetCursorPos(ImVec2(windowSize.x * 0.5f - 100, windowSize.y * 0.5f - 10));
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "No image generated yet");
+    }
+    
+    ImGui::End();
 
     simgui_render();
 
@@ -114,6 +322,20 @@ void frame() {
 }
 
 void cleanup() {
+    // Wait for generation thread to finish
+    if (appState.generationThread != nullptr) {
+        if (appState.generationThread->joinable()) {
+            appState.generationThread->join();
+        }
+        delete appState.generationThread;
+        appState.generationThread = nullptr;
+    }
+    
+    // Clean up image
+    if (appState.imageValid && appState.generatedImage.id != 0) {
+        sg_destroy_image(appState.generatedImage);
+    }
+    
     simgui_shutdown();
     sg_shutdown();
 }
@@ -131,7 +353,7 @@ int main(int argc, const char* argv[]) {
     desc.width = 1280;
     desc.height = 720;
     desc.high_dpi = true;
-    desc.window_title = "Mini C IDE";
+    desc.window_title = "Stable Diffusion Text to Image";
     desc.icon.sokol_default = true;
     desc.logger.func = slog_func;
     sapp_run(desc);
