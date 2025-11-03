@@ -53,6 +53,11 @@ struct AppState {
     sg_view generatedImageView = {0};
     bool imageValid = false;
     
+    // Iteration history for debugging
+    std::vector<std::vector<uint8_t>> iterationImages;
+    int currentIterationIndex = 0;
+    int totalIterations = 0;
+    
     // Save state
     std::string lastPrompt = "";
     
@@ -172,9 +177,22 @@ void generateImage() {
         
         appState.statusMessage = "Generating image...";
         
+        // Clear previous iteration history
+        {
+            std::lock_guard<std::mutex> lock(appState.dataMutex);
+            appState.iterationImages.clear();
+            appState.totalIterations = 0;
+            appState.currentIterationIndex = 0;
+        }
+        
         // Define progress callback for real-time preview
         auto progressCallback = [](int currentStep, int totalSteps, const std::vector<uint8_t>& previewImage) {
             std::lock_guard<std::mutex> lock(appState.dataMutex);
+            
+            // Save iteration image to history
+            appState.iterationImages.push_back(previewImage);
+            appState.totalIterations = currentStep;
+            appState.currentIterationIndex = currentStep - 1; // 0-based index
             
             // Update preview image
             appState.imageData = previewImage;
@@ -381,6 +399,69 @@ void frame() {
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
     
     if (appState.imageValid && appState.generatedImageView.id != 0) {
+        // Iteration slider (only show if we have iteration history)
+        if (appState.totalIterations > 0) {
+            ImGui::Text("Iteration Playback:");
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "Step %d/%d", 
+                appState.currentIterationIndex + 1, appState.totalIterations);
+            
+            int sliderValue = appState.currentIterationIndex;
+            if (ImGui::SliderInt("##iteration", &sliderValue, 0, appState.totalIterations - 1, "")) {
+                // User changed the slider, update displayed image
+                if (sliderValue >= 0 && sliderValue < appState.iterationImages.size()) {
+                    std::lock_guard<std::mutex> lock(appState.dataMutex);
+                    appState.currentIterationIndex = sliderValue;
+                    appState.imageData = appState.iterationImages[sliderValue];
+                    appState.hasNewImage = true;
+                }
+            }
+            
+            // Add quick navigation buttons
+            ImGui::SameLine();
+            if (ImGui::Button("<<")) {
+                // Go to first
+                if (appState.totalIterations > 0) {
+                    std::lock_guard<std::mutex> lock(appState.dataMutex);
+                    appState.currentIterationIndex = 0;
+                    appState.imageData = appState.iterationImages[0];
+                    appState.hasNewImage = true;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("<")) {
+                // Go to previous
+                if (appState.currentIterationIndex > 0) {
+                    std::lock_guard<std::mutex> lock(appState.dataMutex);
+                    appState.currentIterationIndex--;
+                    appState.imageData = appState.iterationImages[appState.currentIterationIndex];
+                    appState.hasNewImage = true;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(">")) {
+                // Go to next
+                if (appState.currentIterationIndex < appState.totalIterations - 1) {
+                    std::lock_guard<std::mutex> lock(appState.dataMutex);
+                    appState.currentIterationIndex++;
+                    appState.imageData = appState.iterationImages[appState.currentIterationIndex];
+                    appState.hasNewImage = true;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(">>")) {
+                // Go to last
+                if (appState.totalIterations > 0) {
+                    std::lock_guard<std::mutex> lock(appState.dataMutex);
+                    appState.currentIterationIndex = appState.totalIterations - 1;
+                    appState.imageData = appState.iterationImages[appState.currentIterationIndex];
+                    appState.hasNewImage = true;
+                }
+            }
+            
+            ImGui::Separator();
+        }
+        
         ImVec2 windowSize = ImGui::GetContentRegionAvail();
         float imageSize = std::min(windowSize.x, windowSize.y);
         
