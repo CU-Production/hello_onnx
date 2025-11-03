@@ -7,6 +7,8 @@ Stable Diffusion with C++ and ONNX Runtime
 
 ```bash
 git clone https://huggingface.co/runwayml/stable-diffusion-v1-5 -b onnx
+# or
+git clone https://huggingface.co/jackos/stable-diffusion-1.5-onnx
 ```
 
 2. change config in program.cs
