@@ -50,10 +50,40 @@ struct AppState {
     sg_image generatedImage = {0};
     bool imageValid = false;
     
+    // Save state
+    std::string lastPrompt = "";
+    
     // Thread
     std::thread* generationThread = nullptr;
     std::mutex dataMutex;
 } appState;
+
+// Function to save the current image
+void saveImage() {
+    if (appState.imageData.empty()) {
+        appState.statusMessage = "No image to save!";
+        return;
+    }
+    
+    std::time_t t = std::time(0);
+    std::tm* now = std::localtime(&t);
+    char buf[80];
+    strftime(buf, sizeof(buf), "%Y%m%d%H%M%S", now);
+    
+    char png_file_path[256];
+    char jpg_file_path[256];
+    snprintf(png_file_path, sizeof(png_file_path), "sd_image_%s_Steps%d_Scale%.1f.png", 
+        buf, appState.numInferenceSteps, appState.guidanceScale);
+    snprintf(jpg_file_path, sizeof(jpg_file_path), "sd_image_%s_Steps%d_Scale%.1f.jpg", 
+        buf, appState.numInferenceSteps, appState.guidanceScale);
+    
+    stbi_write_png(png_file_path, 512, 512, 4, appState.imageData.data(), 512*4);
+    stbi_write_jpg(jpg_file_path, 512, 512, 4, appState.imageData.data(), 100);
+    
+    char statusStr[512];
+    snprintf(statusStr, sizeof(statusStr), "Image saved as %s", png_file_path);
+    appState.statusMessage = statusStr;
+}
 
 // Helper function to convert std::string to std::wstring
 std::wstring stringToWString(const std::string& str) {
@@ -95,34 +125,19 @@ void generateImage() {
         auto timeEnd = std::chrono::high_resolution_clock::now();
         uint64_t milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeStart).count();
         
-        // Save image to file
-        std::time_t t = std::time(0);
-        std::tm* now = std::localtime(&t);
-        char buf[80];
-        strftime(buf, sizeof(buf), "%Y%m%d%H%M%S", now);
-        
-        char png_file_path[256];
-        char jpg_file_path[256];
-        snprintf(png_file_path, sizeof(png_file_path), "sd_image_%s_Steps%d_Scale%.1f.png", 
-            buf, config.NumInferenceSteps, config.GuidanceScale);
-        snprintf(jpg_file_path, sizeof(jpg_file_path), "sd_image_%s_Steps%d_Scale%.1f.jpg", 
-            buf, config.NumInferenceSteps, config.GuidanceScale);
-        
-        stbi_write_png(png_file_path, 512, 512, 4, rgbaData.data(), 512*4);
-        stbi_write_jpg(jpg_file_path, 512, 512, 4, rgbaData.data(), 100);
-        
         {
             std::lock_guard<std::mutex> lock(appState.dataMutex);
             appState.imageData = std::move(rgbaData);
             appState.hasNewImage = true;
+            appState.lastPrompt = prompt;
             
             char timeStr[64];
             snprintf(timeStr, sizeof(timeStr), "%.2fs", milliseconds / 1000.0f);
             appState.lastGenerationTime = timeStr;
             
             char statusStr[512];
-            snprintf(statusStr, sizeof(statusStr), "Image generated in %.2fs (saved as %s)", 
-                milliseconds / 1000.0f, png_file_path);
+            snprintf(statusStr, sizeof(statusStr), "Image generated in %.2fs (click Save to export)", 
+                milliseconds / 1000.0f);
             appState.statusMessage = statusStr;
         }
         
@@ -268,6 +283,19 @@ void frame() {
     }
     
     if (generating) {
+        ImGui::EndDisabled();
+    }
+    
+    // Save button
+    if (appState.imageData.empty() || generating) {
+        ImGui::BeginDisabled();
+    }
+    
+    if (ImGui::Button("Save Image", ImVec2(-1, 30))) {
+        saveImage();
+    }
+    
+    if (appState.imageData.empty() || generating) {
         ImGui::EndDisabled();
     }
     
