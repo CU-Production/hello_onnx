@@ -12,6 +12,7 @@
 #include "StableDiffusion/UNet.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb_image_write.h>
+#include <nfd.h>
 #include <iostream>
 #include <chrono>
 #include <ctime>
@@ -22,6 +23,7 @@
 #include <vector>
 #include <sstream>
 #include <iomanip>
+#include <filesystem>
 
 sg_pass_action pass_action{};
 
@@ -65,24 +67,72 @@ void saveImage() {
         return;
     }
     
+    // Initialize NFD
+    NFD_Init();
+    
+    // Generate default filename
     std::time_t t = std::time(0);
     std::tm* now = std::localtime(&t);
     char buf[80];
     strftime(buf, sizeof(buf), "%Y%m%d%H%M%S", now);
     
-    char png_file_path[256];
-    char jpg_file_path[256];
-    snprintf(png_file_path, sizeof(png_file_path), "sd_image_%s_Steps%d_Scale%.1f.png", 
-        buf, appState.numInferenceSteps, appState.guidanceScale);
-    snprintf(jpg_file_path, sizeof(jpg_file_path), "sd_image_%s_Steps%d_Scale%.1f.jpg", 
+    char defaultName[256];
+    snprintf(defaultName, sizeof(defaultName), "sd_image_%s_Steps%d_Scale%.1f", 
         buf, appState.numInferenceSteps, appState.guidanceScale);
     
-    stbi_write_png(png_file_path, 512, 512, 4, appState.imageData.data(), 512*4);
-    stbi_write_jpg(jpg_file_path, 512, 512, 4, appState.imageData.data(), 100);
+    // Define file filters
+    nfdfilteritem_t filters[2] = {
+        { "PNG Image", "png" },
+        { "JPEG Image", "jpg,jpeg" }
+    };
     
-    char statusStr[512];
-    snprintf(statusStr, sizeof(statusStr), "Image saved as %s", png_file_path);
-    appState.statusMessage = statusStr;
+    nfdchar_t* outPath = nullptr;
+    nfdresult_t result = NFD_SaveDialog(&outPath, filters, 2, nullptr, defaultName);
+    
+    if (result == NFD_OKAY) {
+        std::string savePath(outPath);
+        NFD_FreePath(outPath);
+        
+        // Get file extension
+        std::filesystem::path filePath(savePath);
+        std::string extension = filePath.extension().string();
+        
+        // Convert extension to lowercase
+        for (auto& c : extension) {
+            c = std::tolower(c);
+        }
+        
+        // Save based on extension
+        bool saveSuccess = false;
+        if (extension == ".png") {
+            saveSuccess = stbi_write_png(savePath.c_str(), 512, 512, 4, 
+                appState.imageData.data(), 512*4) != 0;
+        } else if (extension == ".jpg" || extension == ".jpeg") {
+            saveSuccess = stbi_write_jpg(savePath.c_str(), 512, 512, 4, 
+                appState.imageData.data(), 100) != 0;
+        } else {
+            // Default to PNG if no extension or unknown extension
+            savePath += ".png";
+            saveSuccess = stbi_write_png(savePath.c_str(), 512, 512, 4, 
+                appState.imageData.data(), 512*4) != 0;
+        }
+        
+        if (saveSuccess) {
+            char statusStr[512];
+            snprintf(statusStr, sizeof(statusStr), "Image saved as %s", savePath.c_str());
+            appState.statusMessage = statusStr;
+        } else {
+            appState.statusMessage = "Failed to save image!";
+        }
+    } else if (result == NFD_CANCEL) {
+        appState.statusMessage = "Save cancelled";
+    } else {
+        char statusStr[512];
+        snprintf(statusStr, sizeof(statusStr), "Error: %s", NFD_GetError());
+        appState.statusMessage = statusStr;
+    }
+    
+    NFD_Quit();
 }
 
 // Helper function to convert std::string to std::wstring
