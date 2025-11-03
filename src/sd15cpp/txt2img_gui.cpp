@@ -1,6 +1,6 @@
 #define SOKOL_IMPL
 #define SOKOL_NO_ENTRY
-#define SOKOL_GLCORE33
+#define SOKOL_GLCORE
 #include "sokol_app.h"
 #include "sokol_gfx.h"
 #include "sokol_glue.h"
@@ -50,6 +50,7 @@ struct AppState {
     // Image data
     std::vector<uint8_t> imageData;
     sg_image generatedImage = {0};
+    sg_view generatedImageView = {0};
     bool imageValid = false;
     
     // Save state
@@ -201,7 +202,7 @@ void generateImage() {
 
 void init() {
     sg_desc desc = {};
-    desc.context = sapp_sgcontext();
+    desc.environment = sglue_environment();
     desc.logger.func = slog_func;
     sg_setup(&desc);
 
@@ -213,8 +214,8 @@ void init() {
     ImGuiIO* io = &ImGui::GetIO();
     io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;       // Enable Keyboard Controls
     //io->ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;           // Enable Docking
-    io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;         // Enable Multi-Viewport / Platform Windows
+    //io->ConfigFlags |= ImGuiConfigFlags_DockingEnable;         // Enable Docking
+    //io->ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;       // Enable Multi-Viewport / Platform Windows
     //io->ConfigFlags |= ImGuiConfigFlags_DpiEnableScaleFonts;
     //io->ConfigFlags |= ImGuiConfigFlags_ViewportsNoTaskBarIcons;
     //io->ConfigFlags |= ImGuiConfigFlags_ViewportsNoMerge;
@@ -225,30 +226,6 @@ void init() {
     {
         ImGui::GetIO().Fonts->AddFontDefault();
     }
-    {
-
-        ImGuiIO& io = ImGui::GetIO();
-
-        // Build texture atlas
-        unsigned char* pixels;
-        int width, height;
-        io.Fonts->GetTexDataAsRGBA32(&pixels, &width, &height);   // Load as RGBA 32-bit (75% of the memory is wasted, but default font is so small) because it is more likely to be compatible with user's existing shaders. If your ImTextureId represent a higher-level concept than just a GL texture id, consider calling GetTexDataAsAlpha8() instead to save on GPU memory.
-
-        sg_image_desc img_desc{};
-        img_desc.width = width;
-        img_desc.height = height;
-        img_desc.label = "font-texture";
-        img_desc.wrap_u = SG_WRAP_CLAMP_TO_EDGE;
-        img_desc.wrap_v = SG_WRAP_CLAMP_TO_EDGE;
-        img_desc.min_filter = SG_FILTER_LINEAR;
-        img_desc.mag_filter = SG_FILTER_LINEAR;
-        img_desc.data.subimage[0][0].ptr = pixels;
-        img_desc.data.subimage[0][0].size = (width * height) * sizeof(uint32_t);
-
-        sg_image img = sg_make_image(&img_desc);
-
-        io.Fonts->TexID = (ImTextureID)(uintptr_t)img.id;
-    }
 
     pass_action.colors[0].load_action = SG_LOADACTION_CLEAR;
     pass_action.colors[0].clear_value = {0.45f, 0.55f, 0.60f, 1.00f};
@@ -258,7 +235,10 @@ void frame() {
     const int width = sapp_width();
     const int height = sapp_height();
 
-    sg_begin_default_pass(&pass_action, width, height);
+    sg_pass pass{};
+    pass.action = pass_action;
+    pass.swapchain = sglue_swapchain();
+    sg_begin_pass(&pass);
 
     simgui_new_frame({ width, height, sapp_frame_duration(), sapp_dpi_scale() });
 
@@ -266,9 +246,16 @@ void frame() {
     if (appState.hasNewImage.load()) {
         std::lock_guard<std::mutex> lock(appState.dataMutex);
         if (!appState.imageData.empty()) {
-            // Destroy old image if exists
-            if (appState.imageValid && appState.generatedImage.id != 0) {
-                sg_destroy_image(appState.generatedImage);
+            // Destroy old image and view if exists
+            if (appState.imageValid) {
+                if (appState.generatedImageView.id != 0) {
+                    sg_destroy_view(appState.generatedImageView);
+                    appState.generatedImageView.id = 0;
+                }
+                if (appState.generatedImage.id != 0) {
+                    sg_destroy_image(appState.generatedImage);
+                    appState.generatedImage.id = 0;
+                }
             }
             
             // Create new image
@@ -276,12 +263,16 @@ void frame() {
             img_desc.width = 512;
             img_desc.height = 512;
             img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
-            img_desc.min_filter = SG_FILTER_LINEAR;
-            img_desc.mag_filter = SG_FILTER_LINEAR;
-            img_desc.data.subimage[0][0].ptr = appState.imageData.data();
-            img_desc.data.subimage[0][0].size = appState.imageData.size();
+            img_desc.data.mip_levels[0].ptr = appState.imageData.data();
+            img_desc.data.mip_levels[0].size = appState.imageData.size();
             
             appState.generatedImage = sg_make_image(&img_desc);
+            
+            // Create view for the image
+            sg_view_desc view_desc{};
+            view_desc.texture.image = appState.generatedImage;
+            appState.generatedImageView = sg_make_view(&view_desc);
+            
             appState.imageValid = true;
             appState.hasNewImage = false;
         }
@@ -295,7 +286,7 @@ void frame() {
     
     ImGui::SeparatorText("Prompt");
     ImGui::InputTextMultiline("##prompt", appState.prompt, sizeof(appState.prompt), 
-        ImVec2(-1, 80), ImGuiInputTextFlags_None);
+        ImVec2(-1, 80), ImGuiInputTextFlags_WordWrap);
     
     ImGui::SeparatorText("Generation Parameters");
     ImGui::SliderInt("Inference Steps", &appState.numInferenceSteps, 1, 100);
@@ -373,7 +364,7 @@ void frame() {
     ImGui::Begin("Generated Image", nullptr, 
         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize);
     
-    if (appState.imageValid && appState.generatedImage.id != 0) {
+    if (appState.imageValid && appState.generatedImageView.id != 0) {
         ImVec2 windowSize = ImGui::GetContentRegionAvail();
         float imageSize = std::min(windowSize.x, windowSize.y);
         
@@ -382,9 +373,11 @@ void frame() {
         imagePos.x += (windowSize.x - imageSize) * 0.5f;
         imagePos.y += (windowSize.y - imageSize) * 0.5f;
         ImGui::SetCursorPos(imagePos);
-        
-        ImGui::Image((ImTextureID)(uintptr_t)appState.generatedImage.id, 
-            ImVec2(imageSize, imageSize));
+
+        // Use the stored view to get ImTextureID
+        ImTextureID imtex_id = simgui_imtextureid(appState.generatedImageView);
+
+        ImGui::Image(imtex_id, ImVec2(imageSize, imageSize));
     } else {
         ImVec2 windowSize = ImGui::GetContentRegionAvail();
         ImGui::SetCursorPos(ImVec2(windowSize.x * 0.5f - 100, windowSize.y * 0.5f - 10));
@@ -409,9 +402,14 @@ void cleanup() {
         appState.generationThread = nullptr;
     }
     
-    // Clean up image
-    if (appState.imageValid && appState.generatedImage.id != 0) {
-        sg_destroy_image(appState.generatedImage);
+    // Clean up image and view
+    if (appState.imageValid) {
+        if (appState.generatedImageView.id != 0) {
+            sg_destroy_view(appState.generatedImageView);
+        }
+        if (appState.generatedImage.id != 0) {
+            sg_destroy_image(appState.generatedImage);
+        }
     }
     
     simgui_shutdown();
