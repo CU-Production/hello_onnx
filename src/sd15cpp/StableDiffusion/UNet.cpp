@@ -132,12 +132,15 @@ std::vector<uint8_t> UNet::Inference(const std::string &prompt, const StableDiff
             << std::endl;
     }
 
-    // Scale and decode the image latents with vae.
+    // Scale and decode the image latents with vae
     // latents = 1 / 0.18215 * latents
     latents = latents * (1.0f / 0.18215f);
 
     // Decode image
     auto imageResultTensor = VaeDecoder::Decoder(latents, config);
+
+    // Clamp tensor values to [-1, 1] to prevent color overflow
+    imageResultTensor.Clamp(-1.0f, 1.0f);
 
     auto imageVec = imageResultTensor.ToTextureRGBA8DataEx(ColorNormalization::LinearPlusMinusOne);
 
@@ -227,6 +230,9 @@ std::vector<uint8_t> UNet::Inference_ForGUI(const std::string &prompt, const Sta
             auto vaeOutputValues = vaeBindings.GetOutputValues();
             auto imageResultTensor = Tensor::FromOrtValue(vaeOutputValues[0]);
             
+            // Clamp tensor values to [-1, 1] to prevent color overflow
+            imageResultTensor.Clamp(-1.0f, 1.0f);
+            
             // Convert to RGBA
             auto imageVec = imageResultTensor.ToTextureRGBA8DataEx(ColorNormalization::LinearPlusMinusOne);
             
@@ -246,6 +252,10 @@ std::vector<uint8_t> UNet::Inference_ForGUI(const std::string &prompt, const Sta
     
     auto vaeOutputValues = vaeBindings.GetOutputValues();
     auto imageResultTensor = Tensor::FromOrtValue(vaeOutputValues[0]);
+    
+    // Clamp tensor values to [-1, 1] to prevent color overflow
+    imageResultTensor.Clamp(-1.0f, 1.0f);
+    
     auto imageVec = imageResultTensor.ToTextureRGBA8DataEx(ColorNormalization::LinearPlusMinusOne);
 
     return imageVec[0];

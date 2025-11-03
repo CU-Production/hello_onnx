@@ -282,6 +282,19 @@ namespace MachineLearning
     }
   }
 
+  void Tensor::Clamp(float min, float max)
+  {
+    if (Type != TensorType::Single) throw std::bad_cast();
+    
+    auto dataPtr = AsPointer<float>();
+    size_t totalSize = Size();
+    
+    for (size_t i = 0; i < totalSize; i++)
+    {
+      dataPtr[i] = std::clamp(dataPtr[i], min, max);
+    }
+  }
+
   std::vector<std::vector<uint8_t>> Tensor::ToTextureRGBA8DataEx(ColorNormalization normalization) const
   {
     std::vector<std::vector<uint8_t>> results;
@@ -312,9 +325,9 @@ namespace MachineLearning
               break;
             case ColorNormalization::LinearZeroToOne:
               byteColor = {
-                uint8_t(color[0] * 255),
-                uint8_t(color[1] * 255),
-                uint8_t(color[2] * 255),
+                (uint8_t)std::round(std::clamp(color[0], 0.0f, 1.0f) * 255),
+                (uint8_t)std::round(std::clamp(color[1], 0.0f, 1.0f) * 255),
+                (uint8_t)std::round(std::clamp(color[2], 0.0f, 1.0f) * 255),
                 255 };
               break;
             default:
