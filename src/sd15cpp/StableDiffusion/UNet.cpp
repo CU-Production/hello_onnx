@@ -143,3 +143,110 @@ std::vector<uint8_t> UNet::Inference(const std::string &prompt, const StableDiff
 
     return imageVec[0];
 }
+
+std::vector<uint8_t> UNet::Inference_ForGUI(const std::string &prompt, const StableDiffusionConfig &config, ProgressCallback callback)
+{
+    // Preprocess text
+    auto textEmbeddings = TextProcessing::PreprocessText(prompt, config);
+
+    LMSDiscreteScheduler scheduler{};
+    auto timesteps = scheduler.SetTimesteps(config.NumInferenceSteps);
+
+    std::mt19937 mt(std::time(nullptr));
+
+    uint32_t seed = mt();
+    std::cout << "Seed generated: " << seed << std::endl;
+
+    // create latent tensor
+    auto latents = GenerateLatentSample(config, seed, scheduler.InitNoiseSigma);
+
+    auto sessionOptions = config.GetSessionOptionsForEp();
+
+    Ort::Session unetSession{config.env, config.UnetOnnxPath.c_str(), sessionOptions};
+    
+    // Create VAE decoder session (reused for all previews)
+    Ort::Session vaeSession{config.env, config.VaeDecoderOnnxPath.c_str(), sessionOptions};
+
+    for (int t = 0; t < timesteps.size(); t++)
+    {
+        // torch.cat([latents] * 2)
+        auto latentModelInput = latents.Duplicate(2);
+
+        latentModelInput = scheduler.ScaleInput(latentModelInput, timesteps[t]);
+        auto latentModelInputValuePointer = latentModelInput.AsPointer<float>();
+        std::vector<float> latentModelInputValueVector(latentModelInputValuePointer, latentModelInputValuePointer + latentModelInput.Size());
+
+        std::cout << "scaled model input " << latentModelInputValueVector[0]
+            << " at step " << t
+            << ". Max " << *std::max_element(latentModelInputValueVector.begin(), latentModelInputValueVector.end())
+            << ". Min " << *std::min_element(latentModelInputValueVector.begin(), latentModelInputValueVector.end())
+            << std::endl;
+
+        Tensor timeStepTensor{TensorType::Int64, 1};
+        timeStepTensor.AsPointer<int64_t >()[0] = timesteps[t];
+
+        Ort::IoBinding bindings{ unetSession };
+        bindings.BindInput("encoder_hidden_states", textEmbeddings.ToOrtValue());
+        bindings.BindInput("sample", latentModelInput.ToOrtValue());
+        bindings.BindInput("timestep", timeStepTensor.ToOrtValue());
+        bindings.BindOutput("out_sample", config.memoryInfo);
+
+        unetSession.Run({}, bindings);
+
+        auto outputValues = bindings.GetOutputValues();
+        auto outputTensor = Tensor::FromOrtValue(outputValues[0]);
+
+        // Split tensors from 2,4,64,64 to 1,4,64,64
+        auto splitTensors = outputTensor.Split(2);
+        auto noisePred = splitTensors[0];
+        auto noisePredText = splitTensors[1];
+
+        // Perform guidance
+        noisePred = performGuidance(noisePred, noisePredText, config.GuidanceScale);
+
+        // LMS Scheduler Step
+        latents = scheduler.Step(noisePred, timesteps[t], latents);
+        auto latentsValuepointer = latents.AsPointer<float>();
+        std::vector<float> latentsValueVector(latentsValuepointer, latentsValuepointer + latents.Size());
+        std::cout << "latents result after step { " << t <<" }"
+            << " min { " << *std::min_element(latentsValueVector.begin(), latentsValueVector.end()) << " }"
+            << " max { " << *std::max_element(latentsValueVector.begin(), latentsValueVector.end()) << " }"
+            << std::endl;
+        
+        // Generate preview image after each step and call callback
+        if (callback) {
+            // Scale latents for decoding
+            auto previewLatents = latents * (1.0f / 0.18215f);
+            
+            // Decode to image
+            Ort::IoBinding vaeBindings{ vaeSession };
+            vaeBindings.BindInput("latent_sample", previewLatents.ToOrtValue());
+            vaeBindings.BindOutput("sample", config.memoryInfo);
+            vaeSession.Run({}, vaeBindings);
+            
+            auto vaeOutputValues = vaeBindings.GetOutputValues();
+            auto imageResultTensor = Tensor::FromOrtValue(vaeOutputValues[0]);
+            
+            // Convert to RGBA
+            auto imageVec = imageResultTensor.ToTextureRGBA8DataEx(ColorNormalization::LinearPlusMinusOne);
+            
+            // Call the callback with progress info
+            callback(t + 1, timesteps.size(), imageVec[0]);
+        }
+    }
+
+    // Scale and decode the final image
+    latents = latents * (1.0f / 0.18215f);
+
+    // Decode final image
+    Ort::IoBinding vaeBindings{ vaeSession };
+    vaeBindings.BindInput("latent_sample", latents.ToOrtValue());
+    vaeBindings.BindOutput("sample", config.memoryInfo);
+    vaeSession.Run({}, vaeBindings);
+    
+    auto vaeOutputValues = vaeBindings.GetOutputValues();
+    auto imageResultTensor = Tensor::FromOrtValue(vaeOutputValues[0]);
+    auto imageVec = imageResultTensor.ToTextureRGBA8DataEx(ColorNormalization::LinearPlusMinusOne);
+
+    return imageVec[0];
+}

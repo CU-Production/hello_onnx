@@ -171,7 +171,23 @@ void generateImage() {
         }
         
         appState.statusMessage = "Generating image...";
-        auto rgbaData = UNet::Inference(prompt, config);
+        
+        // Define progress callback for real-time preview
+        auto progressCallback = [](int currentStep, int totalSteps, const std::vector<uint8_t>& previewImage) {
+            std::lock_guard<std::mutex> lock(appState.dataMutex);
+            
+            // Update preview image
+            appState.imageData = previewImage;
+            appState.hasNewImage = true;
+            
+            // Update status message with progress
+            char statusStr[512];
+            snprintf(statusStr, sizeof(statusStr), "Generating... Step %d/%d (%.1f%%)", 
+                currentStep, totalSteps, (currentStep * 100.0f) / totalSteps);
+            appState.statusMessage = statusStr;
+        };
+        
+        auto rgbaData = UNet::Inference_ForGUI(prompt, config, progressCallback);
         
         auto timeEnd = std::chrono::high_resolution_clock::now();
         uint64_t milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(timeEnd - timeStart).count();
