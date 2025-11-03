@@ -34,6 +34,7 @@ struct AppState {
     int numInferenceSteps = 15;
     float guidanceScale = 7.5f;
     int deviceId = 0;
+    int executionProvider = 0; // 0 = DirectML, 1 = CPU
     
     // Model paths
     char textEncoderPath[512] = "E:/SW/ML/stable-diffusion-1.5-onnx/text_encoder/model.onnx";
@@ -164,7 +165,11 @@ void generateImage() {
             prompt = std::string(appState.prompt);
             config.NumInferenceSteps = appState.numInferenceSteps;
             config.GuidanceScale = appState.guidanceScale;
-            config.ExecutionProviderTarget = StableDiffusionConfig::ExecutionProvider::DirectML;
+            
+            // Set execution provider based on user selection
+            config.ExecutionProviderTarget = (appState.executionProvider == 0) 
+                ? StableDiffusionConfig::ExecutionProvider::DirectML 
+                : StableDiffusionConfig::ExecutionProvider::Cpu;
             config.DeviceId = appState.deviceId;
             
             config.TextEncoderOnnxPath = stringToWString(std::string(appState.textEncoderPath));
@@ -325,6 +330,11 @@ void frame() {
     ImGui::SeparatorText("Generation Parameters");
     ImGui::SliderInt("Inference Steps", &appState.numInferenceSteps, 1, 100);
     ImGui::SliderFloat("Guidance Scale", &appState.guidanceScale, 1.0f, 20.0f, "%.1f");
+    
+    // Execution Provider dropdown
+    const char* executionProviders[] = { "DirectML", "CPU" };
+    ImGui::Combo("Execution Provider", &appState.executionProvider, executionProviders, IM_ARRAYSIZE(executionProviders));
+    
     ImGui::SliderInt("Device ID", &appState.deviceId, 0, 3);
     
     ImGui::SeparatorText("Model Paths");
